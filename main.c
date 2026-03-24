@@ -3,6 +3,9 @@
 #include <unistd.h>
 #include <string.h>
 #include <sys/wait.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <sys/types.h>
 int main() {
     while (1) {
         printf("MiniShell> ");
@@ -49,6 +52,27 @@ int main() {
             continue;
         }
         if (pid == 0) { //child process
+            int j=0;
+            while (args[j]!=NULL) {
+                if (strcmp(args[j],">")==0) {
+                    if (args[j+1]==NULL) {
+                        fprintf(stderr,">: No file specified.\n");
+                        _exit(1);
+                    }//Open the CORRECT file (args[j+1]) with permissions (0644)
+                    int fd=open(args[j+1],O_WRONLY|O_CREAT|O_TRUNC, 0644); //0644 ensures that when you create a file, you have the permissions to r or w later.
+                    if (fd==-1) {
+                        perror("Error opening file");
+                        _exit(1);
+                    }
+                    dup2(fd,1); // // This makes descriptor 1 (stdout) point to our file instead of the screen.
+                    close(fd);
+
+                    args[j]=NULL;//Truncate args so execvp doesn't see ">" or the filename.  By setting args[j] = NULL before execvp, you tell the next program: "Ignore the > and the filename; just do your job and send the output to the redirected stdout.
+                    break; // Found redirection, we're done looking
+                }
+                j++;
+            }
+
             execvp(args[0],args); //in unix args[0] = program name. And the rest are arguments.
             //args[0] is the program name (ls), execvp asks the kernel to load that program and replace the current process with it.
             perror("Process execution failed"); // only runs if exec fails
