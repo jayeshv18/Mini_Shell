@@ -64,13 +64,32 @@ int main() {
                         perror("Error opening file");
                         _exit(1);
                     }
-                    dup2(fd,1); // // This makes descriptor 1 (stdout) point to our file instead of the screen.
+                    dup2(fd,STDOUT_FILENO); // // This makes descriptor 1 (stdout) point to our file instead of the screen.
                     close(fd);
 
                     args[j]=NULL;//Truncate args so execvp doesn't see ">" or the filename.  By setting args[j] = NULL before execvp, you tell the next program: "Ignore the > and the filename; just do your job and send the output to the redirected stdout.
                     break; // Found redirection, we're done looking
                 }
                 j++;
+            }
+            int i=0;
+            while (args[i]!=NULL) {
+                if (strcmp(args[i],"<")==0) {
+                    if (args[i+1]==NULL) {
+                        fprintf(stderr,"<: No file specified.\n");
+                        _exit(1);
+                    }//0644 permission is only needed when creating files.
+                    int fd=open(args[i+1],O_RDONLY); //we are not using O_TRUNC because it erases the file content and we only need to read the file.
+                    if (fd==-1) {
+                        perror("Error opening file");
+                        _exit(1);
+                    }
+                    dup2(fd, STDIN_FILENO);
+                    close(fd);
+                    args[i]=NULL;
+                    break;
+                }
+                i++;
             }
 
             execvp(args[0],args); //in unix args[0] = program name. And the rest are arguments.
