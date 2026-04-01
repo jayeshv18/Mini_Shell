@@ -45,58 +45,65 @@ int main() {
             }
             continue; //skip the current iteration once cd is called cause cd doesn't requires fork() or execvp. It acts on parent process and not on child.
         }
-        
-        pid_t pid = fork(); // pid_t is a specialized data type used to represent Process IDs
-        if (pid<0) {
-            perror("Process creation failed");
-            continue;
-        }
-        if (pid == 0) { //child process
-            int j=0;
-            while (args[j]!=NULL) {
-                if (strcmp(args[j],">")==0) {
-                    if (args[j+1]==NULL) {
-                        fprintf(stderr,">: No file specified.\n");
-                        _exit(1);
-                    }//Open the CORRECT file (args[j+1]) with permissions (0644)
-                    int fd=open(args[j+1],O_WRONLY|O_CREAT|O_TRUNC, 0644); //0644 ensures that when you create a file, you have the permissions to r or w later.
-                    if (fd==-1) {
-                        perror("Error opening file");
-                        _exit(1);
-                    }
-                    dup2(fd,STDOUT_FILENO); // // This makes descriptor 1 (stdout) point to our file instead of the screen.
-                    close(fd);
 
-                    args[j]=NULL;//Truncate args so execvp doesn't see ">" or the filename.  By setting args[j] = NULL before execvp, you tell the next program: "Ignore the > and the filename; just do your job and send the output to the redirected stdout.
-                    break; // Found redirection, we're done looking
-                }
-                j++;
+        char **commands[16]; //an array of 16 string arrays
+        int num_commands=0; //counter
+        commands[num_commands]=&args[0]; //Before we loop, our very first command starts at args[0]
+        num_commands++;
+        int l=0;
+
+        while (args[l]!=NULL) {
+            if (strcmp(args[l],"|")==0) {
+                args[l]=NULL; // Sever the array here
+                commands[num_commands]=&args[l+1]; //word immediately after the pipe (args[i+1]) is the start of the next command.
+                num_commands++;
+                /*commands[0] points to ["ls", "-l", NULL]
+                commands[1] points to ["grep", "txt", NULL]
+                commands[2] points to ["wc", "-l", NULL]*/
             }
-            int i=0;
-            while (args[i]!=NULL) {
-                if (strcmp(args[i],"<")==0) {
-                    if (args[i+1]==NULL) {
-                        fprintf(stderr,"<: No file specified.\n");
-                        _exit(1);
-                    }//0644 permission is only needed when creating files.
-                    int fd=open(args[i+1],O_RDONLY); //we are not using O_TRUNC because it erases the file content and we only need to read the file.
-                    if (fd==-1) {
-                        perror("Error opening file");
-                        _exit(1);
-                    }
-                    dup2(fd, STDIN_FILENO);
-                    close(fd);
-                    args[i]=NULL;
+            l++;
+        }
+        int prev_read_fd = 0; // Starts with keyboard input
+        for (int j=0;j<num_commands;j++) {
+            int fd[2];// fd[0] is read, fd[1] is write
+            if (j<num_commands-1) {
+                if (pipe(fd)==-1) {
+                    perror("pipe failed");
                     break;
                 }
-                i++;
             }
 
-            execvp(args[0],args); //in unix args[0] = program name. And the rest are arguments.
-            //args[0] is the program name (ls), execvp asks the kernel to load that program and replace the current process with it.
-            perror("Process execution failed"); // only runs if exec fails
-            _exit(1); // terminate current process immediately, Child dies instantly, No side effects, No duplicate flushing
-        }else{ //parent process
+            pid_t pipe_id=fork();
+            if (pipe_id==-1) {
+                perror("fork failed");
+                continue;
+            }
+            if (pipe_id==0) {
+                if (prev_read_fd!=0) {// Wire input from previous pipe
+                    dup2(prev_read_fd,STDIN_FILENO);
+                    close(prev_read_fd);
+                }
+                if (j<num_commands-1) {// Wire output to current pipe
+                    dup2(fd[1],STDOUT_FILENO);
+                    close(fd[1]);
+                    close(fd[0]);// Child doesn't read from the pipe it just wrote to
+                }
+                // < and > logic
+                execvp(commands[j][0],commands[j] );
+                perror("Process execution failed");
+                _exit(1);
+            }else {// parent process
+                if (prev_read_fd!=0) { //Close the previous read descriptor (if it's not STDIN)
+                    // Close the old read end
+                    close(prev_read_fd);
+                }// Close the write end of the new pipe, save the read end
+                if (j<num_commands-1) { //If not the last command, close the write end of the NEW pipe, and save the read end for the next iteration!
+                    close(fd[1]);
+                    prev_read_fd=fd[0];
+                }
+            }
+        }// The parent waits for ALL children to finish before showing the prompt again.
+        for (int j=0;j<num_commands;j++) {
             wait(NULL);
         }
     }
