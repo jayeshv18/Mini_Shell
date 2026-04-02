@@ -88,10 +88,81 @@ int main() {
                     close(fd[1]);
                     close(fd[0]);// Child doesn't read from the pipe it just wrote to
                 }
-                // < and > logic
+
+                //Redirection < >
+
+                int m=0;
+                // We use this to remember the exact array index where we need to cut the command.
+                // We initialize it to -1 (meaning "no redirection found yet").
+                int truncate_index = -1; // Track where to cut the array
+                while (commands[j][m]!=NULL) { //Iterate through every single word in the current command array.
+                    if (strcmp(commands[j][m],"<")==0) {
+                        if (commands[j][m+1]==NULL) { // Error Handling: Did the user type "<" but forget the filename
+                            fprintf(stderr,"<: No file specified.\n");
+                            _exit(1); // Kill this child process immediately
+                        }
+
+                        // The kernel opens it and assigns it the lowest available
+                        // file descriptor slot (usually Slot 3, since 0, 1, 2 are taken).
+
+                        int file_fd=open(commands[j][m+1],O_RDONLY);
+                        if (file_fd==-1) {
+                            perror("open failed");
+                            exit(1);
+                        }
+
+                        // STDIN_FILENO is Slot 0 (wired to the keyboard by default).
+                        // This unplugs the keyboard, and plugs our file's wire into Slot 0.
+                        // Now, when the program asks for user input, it reads the file instead!
+
+                        dup2(file_fd,STDIN_FILENO);
+                        close(file_fd);// Slot 0 is now reading the file, so we don't need Slot 3 anymore.
+                        // Close it to prevent memory leaks in the kernel.
+
+                        // Save the index of the first symbol we find
+                        if (truncate_index == -1) truncate_index = m;
+                    }
+                    else if (strcmp(commands[j][m],">")==0) {
+                        if (commands[j][m+1]==NULL) {
+                            fprintf(stderr,">: No file specified.\n");
+                            _exit(1);
+                        }
+
+                        int file_fd=open(commands[j][m+1],O_WRONLY|O_CREAT|O_TRUNC,0644);
+                        if (file_fd==-1) {
+                            perror("open failed");
+                            _exit(1);
+                        }
+
+                        // STDOUT_FILENO is Slot 1 (wired to the monitor by default).
+                        // This unplugs the monitor, and plugs our file's wire into Slot 1.
+                        // Now, when the program runs printf(), the text goes straight into the file!
+
+                        dup2(file_fd,STDOUT_FILENO);
+                        close(file_fd); //Cleanup
+                        // Save the index of the first symbol we find
+                        if (truncate_index == -1) truncate_index = m;
+                    }
+                    m++; // Move to the next word in the command array
+                }
+                //Hide the redirection from execvp
+                // If we found ANY redirection symbols (truncate_index is no longer -1),
+                // we must cut the array right where the very FIRST symbol appeared.
+
+                // Example: ["cat", "<", "input.txt", ">", "out.txt", NULL]
+                // Becomes: ["cat", NULL, "input.txt", ">", "out.txt", NULL]
+
+                // Why? execvp() stops reading arguments the moment it sees the first NULL.
+                // So the program just sees "cat", but the kernel has already secretly
+                // rewired its input and output behind the scenes!
+                if (truncate_index != -1) {
+                    commands[j][truncate_index] = NULL;
+                }
+
                 execvp(commands[j][0],commands[j] );
                 perror("Process execution failed");
                 _exit(1);
+
             }else {// parent process
                 if (prev_read_fd!=0) { //Close the previous read descriptor (if it's not STDIN)
                     // Close the old read end
