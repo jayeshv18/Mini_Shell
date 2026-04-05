@@ -63,19 +63,77 @@ int main() {
             perror("fgets failed");
             break;
         }
+        /* THE WHITEBOARD METAPHOR: ADVANCED PARSING & MEMORY MANAGEMENT
+ * CAST OF CHARACTERS & PROPS:
+ * - The Dictator: The user typing the command (buffer).
+ * - The Mini-Whiteboard: current_word (Our temporary character canvas).
+ * - The "Literal" Sticky Note: in_quotes (Our State Machine flag).
+ * - The Polaroid Camera: strdup() (Grabs fresh, permanent memory).
+ * - The Photo Album: *args[] (Our array of argument pointers).
+ *
+ *  THE ASSEMBLY LINE
+ * The Dictator reads the command one character at a time.
+ * - If it's a normal letter, we write it on our Whiteboard (current_word).
+ * - If the Dictator says "Quote!", we flip our Sticky Note (in_quotes = !in_quotes).
+ *
+ *   THE SPACE TRIGGER
+ * If the Dictator says "Space!":
+ * - IF the Sticky Note says we are IN QUOTES: We ignore the trigger and just
+ * draw a space on the Whiteboard. It's part of a filename!
+ * - IF the Sticky Note says we are NOT IN QUOTES: The word is officially done.
+ * 1. We check the Whiteboard (c > 0) to make sure it's not completely blank
+ * (this protects us from saving multiple spaces in a row).
+ * 2. We draw a Stop Sign at the end of the letters ('\0') so C knows where
+ * the word actually ends.
+ * 3. We use our Polaroid Camera (strdup) to take a permanent photo of the
+ * Whiteboard, and tape that photo into our Photo Album (args[i]).
+ * 4. We wipe the Whiteboard completely clean (c = 0) to prepare for the next word.
+ *
+ * THE FINAL FLUSH (Leftover Paint)
+ * The Dictator finishes the sentence (\n or \0) and walks out of the room.
+ * Because they didn't say "Space" after the very last word, that word is still
+ * sitting on our Whiteboard, un-photographed!
+ * - We check the Whiteboard one last time (c > 0). If there is ink on it, we
+ * draw a Stop Sign, take a Polaroid, and put it in the Album.
+ * - FINALLY, we put a completely blank piece of paper (NULL) at the very back
+ * of the Photo Album. If we don't do this, the blind robot (execvp) will keep
+ * flipping pages past the end of the album into garbage memory and crash.
+  */
         char *args[64]; //a char ptr array to store the shell commands as string.
         int i=0;
-        args[i]=strtok(buffer," \t\n"); //Split whenever you see ANY ONE of these characters ie ' ' (space) or '\n' (newline)
-        while (args[i]!=NULL) {
-            i++;
-            args[i]=strtok(NULL," \t\n");
-            // Null in strtok means, continue from where you left last time cause otherwise it'll always give the first element and keep stoping there.
+        int c=0;
+        char current_word[1024];
+        int in_quotes=0;
+        for (int p=0;buffer[p]!='\0' && buffer[p]!='\n';p++) {
+            char current_char=buffer[p];
+            if (current_char=='"') {
+                in_quotes=!in_quotes; // FLIP THE STATE: If 0 make it 1, if 1 make it 0
+            }else if (current_char==' ' && in_quotes==0) { // space
+                if (c>0) { //Only save if there's a real word.
+                    current_word[c]='\0'; //once the string is capped with \0
+                    args[i] = strdup(current_word); // we use strdup() to grab fresh memory for it
+                    //point args[i] to that memory
+                    i++; // Move the array index forward
+                    c = 0; // then wipe the canvas by setting c = 0.
+                }
+            }else {
+                current_word[c]=current_char;
+                c++;
+            }
         }
+        if (c>0) {
+            current_word[c]='\0';
+            args[i] = strdup(current_word);
+            i++;
+        }
+        args[i]=NULL;
+
         if (args[0] == NULL) continue; //If user presses enter, crash handling
 
         int is_background=0; //background processsing variable dec
         if (strcmp(args[i-1],"&")==0) {
             is_background = 1; //flag
+            free(args[i-1]);// we need to free the memory in the last end .
             args[i-1]=NULL; //overwrite that & with NULL, When this eventually hits execvp(), the sleep program will literally receive & as an argument, get confused, and throw an error.
         }
 
@@ -112,6 +170,7 @@ int main() {
 
         while (args[l]!=NULL) {
             if (strcmp(args[l],"|")==0) {
+                free(args[l]); // we need to free the mem, check at the end for more details.
                 args[l]=NULL; // Sever the array here
                 commands[num_commands]=&args[l+1]; //word immediately after the pipe (args[i+1]) is the start of the next command.
                 num_commands++;
@@ -264,6 +323,24 @@ int main() {
             for (int j=0;j<num_commands;j++) {
                 // Wait specifically for the PIDs we just spawned! in the else {} block to track the pids and overcome race conditions
                 waitpid(pids[j], NULL, 0);
+            }
+        }
+        /* When we use strdup(), it allocates a block of memory on the heap. our array (args[index]) holds the pointer (the memory address) to that block.
+         * If we write args[index] = NULL; first, we overwrite the memory address. The heap memory is still allocated, but our program has lost the only pointer to it.
+         * we can no longer access or free it. This is a memory leak (specifically, an orphaned pointer).
+         *
+         * we must call free(args[index]); to release the heap memory before we overwrite the pointer with NULL.
+         *
+        * To make pipes (|) and backgrounding (&) work with execvp(), our code intentionally injects NULLs into the middle of the args array.
+        * If we use a while (args[k] != NULL) loop to clean up memory, the loop will terminate the millisecond it hits the first injected NULL.
+        * Any arguments that came after the pipe will be completely ignored and left in RAM, causing a memory leak.
+        * Because the variable i tracked the exact number of words we originally allocated,
+        * a for (int k = 0; k < i; k++) loop forces the program to check the entire length of the array, bypassing the injected NULLs and safely freeing every remaining pointer.
+         */
+
+        for (int k=0;k<i;k++) { // i is the exact total number of words we parsed
+            if (args[k]!=NULL) { // Only free it if it isn't already a blank page
+                free(args[k]);
             }
         }
     }
