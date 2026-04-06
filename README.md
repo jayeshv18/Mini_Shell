@@ -62,5 +62,5 @@ Example Usage:
   -MiniShell> whoami
 
 Build & Run:
-gcc shell.c -o myshell
-./myshell
+gcc main.c -o Mini_Shell
+./Mini_Shell
