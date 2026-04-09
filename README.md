@@ -1,4 +1,4 @@
-Mini_Shell (C) README 
+Mini_Shell (C) 
 
 Mini Shell is a minimal Unix-like command-line interpreter written in C.
 It demonstrates core operating system concepts such as process creation, program execution, and command parsing.
