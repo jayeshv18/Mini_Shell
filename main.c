@@ -1,3 +1,4 @@
+#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <signal.h>
@@ -116,7 +117,51 @@ int main() {
                     i++; // Move the array index forward
                     c = 0; // then wipe the canvas by setting c = 0.
                 }
-            }else {
+            }
+            else if (current_char=='$') { //When the parser sees a '$', it pauses normal drawing to do a dictionary lookup.
+                //We do `p++` immediately to step over the '$'. If we don't, our while-loop
+                //will instantly fail because '$' is not an alphanumeric character.
+                char var_char[64];
+                int v=0;
+                p++;
+                while (isalnum(buffer[p]) || buffer[p] == '_') { /*We use `isalnum` and `_` to grab only valid Linux variable characters.
+                                                                  * We copy them one-by-one from the main `buffer` into our temporary `var_char`
+                                                                  * array, using `v` to keep track of exactly how many letters we grabbed.*/
+                    var_char[v]=buffer[p];
+                    v++;
+                    p++;
+                }
+                var_char[v]='\0';
+                /*When we declared `char var_char[64]`, C gave us 64 bytes of random RAM.
+                 * It is completely filled with garbage from old programs (e.g., ['U','S','E','R','@','X'...]).
+                 * We MUST place a Stop Sign ('\0') exactly at index `v`.
+                 * If we put it at the very end (index 63), `getenv()` will read "USER" plus 59
+                 * characters of absolute garbage, ask the OS for "USER@X9*...", and fail.
+                 * Putting it at `v` perfectly seals the word and hides the garbage.*/
+
+                char* value=getenv(var_char);
+
+                /*We hand `var_char` to `getenv()`. If it returns a definition (like "jay"),
+                 * we use a for-loop to write that definition onto our main `current_word` whiteboard.
+                 * Notice we use our global whiteboard marker (`c`). This ensures that if the
+                 * user typed "Hello_$USER", we append "jay" to make "Hello_jay" instead of
+                 * teleporting back to 0 and overwriting "Hello_".*/
+
+                if (value==NULL) {
+                    fprintf(stderr,"environment variable not set.\n");
+                }else {
+                    for (int a=0;value[a]!='\0';a++) {
+                        current_word[c]=value[a];
+                        c++;
+                    }
+                }
+                p--;
+                /*Our extraction while-loop broke because `buffer[p]` hit a space or a quote.
+                 * This means `p` is currently sitting directly ON that space or quote.
+                 * Because the main parser for-loop is about to execute `p++`, it would
+                 * completely skip that space/quote! We must do `p--` so the main loop reads it properly.*/
+            }
+            else {
                 current_word[c]=current_char;
                 c++;
             }
