@@ -1,66 +1,55 @@
-Mini_Shell (C) 
+Mini Shell (C)
 
-Mini Shell is a minimal Unix-like command-line interpreter written in C.
-It demonstrates core operating system concepts such as process creation, program execution, and command parsing.
+Mini Shell is a highly robust, memory-safe UNIX-like command line interpreter written in C. It demonstrates advanced operating system concepts including low-level process management, inter-process communication, asynchronous signal handling, and dynamic memory allocation. This program avoids wrapper functions and directly interacts with the Linux kernel via system calls.
 
-This program avoids using system() and directly interacts with the OS via system calls (fork, execvp, wait).
+Core Architecture and Concepts
 
-The shell follows a simple loop:
-  -Display a prompt (MiniShell>)
-  -Read user input using fgets
-  -Parse the input into tokens using strtok
-  -Create a new process using fork()
-  -Execute the command in the child process using execvp()
-  -Parent process waits for execution to complete using wait()
+Advanced Lexical Parsing
+The shell replaces standard string tokenization with a custom Lexical State Machine. It accurately parses arguments wrapped in quotes, preserving inner whitespaces and automatically stripping the quotes. It uses dynamic memory to safely allocate arguments on the fly, backed by a strict cleanup protocol (The Janitor Loop) to prevent memory leaks.
 
-Core Concepts Implemented:
+Process Creation and Execution
+It spawns a perfect clone of the parent process to execute commands via the system PATH, safely transforming process memory spaces without crashing the parent shell.
 
-1. Command Parsing
-  -Input is split into tokens based on delimiters (space, tab, newline)
-  -Tokens are stored as an array of strings (char *args[])
-  -This mimics how arguments (argv) are passed to programs in Unix
+Inter-Process Communication
+The shell implements dynamic piping, allowing the output of one command to flow directly into the input of the next. It manages an array of file descriptors, carefully wiring standard input and output streams and closing unused ends to prevent deadlocks.
 
-2. Process Creation (fork)
-  -A new process is created for each command
-  -The child process executes the command
-  -The parent process continues running the shell
+File Stream Redirection
+It detects redirection symbols and dynamically rewires standard input and output streams. It securely detaches standard input and output from the terminal and points them to local files on the disk.
 
-3. Program Execution (execvp)
-  -Replaces the child process with the requested program
-  -Uses system PATH to locate executables
-   Example:
-   ls -l
-   
-   becomes:
-   ["ls", "-l", NULL]
+Asynchronous Signal Handling
+The main shell ignores Ctrl+C interrupts, ensuring the shell never accidentally dies. Child processes are explicitly reset so foreground tasks can still be killed. It also utilizes an asynchronous signal handler to silently clean up background processes the exact millisecond they terminate, without freezing the main shell.
 
-4. Process Synchronization (wait)
-  -Parent process waits for the child to finish
-  -Prevents overlapping execution and messy output
+Advanced Features
 
-5. Buffer Handling
-  -fflush(stdout) ensures prompt is displayed immediately
-  -Proper handling of newline characters from fgets
-   
-Features:
-  -Interactive shell prompt
-  -Executes system commands (ls, pwd, whoami, etc.)
-  -Argument parsing
-  -Process management using fork-exec model
-  -Basic error handling
+Interactive Prompt: Real-time command interface.
+Built-in Commands: Native support for changing directories and exiting the shell.
+Background Processing: Allows long-running tasks to execute in the background asynchronously while immediately returning shell control to the user.
+Environment Variable Expansion: Dynamically parses and injects system environment variables (like your username or home directory) into commands at runtime.
 
-Limitations:
-  -No built-in commands like cd
-  -No piping (|)
-  -No input/output redirection
-  -No command history
-  -No support for quoted strings
+Built-in Protections
 
-Example Usage:
-  -MiniShell> ls
-  -MiniShell> pwd
-  -MiniShell> whoami
+Consecutive Space Shield: Ignores massive blocks of accidental whitespace.
+Memory Leak Prevention: Guarantees full heap memory cleanup after every command cycle, even when argument arrays are intentionally severed for pipes.
+Empty Command Handling: Safely handles empty Enter presses without crashing.
 
-Build & Run:
-gcc main.c -o Mini_Shell
+Example Usage
+
+Standard Execution:
+ls -la
+
+Piping and Redirection:
+cat input.txt | grep error > output.txt
+
+Background Tasks:
+sleep 100 &
+
+Environment Variables:
+echo Hello there, $USER
+
+Build and Run Instructions
+
+To compile the shell, use the following command in your terminal:
+gcc -o Mini_Shell main.c
+
+To run the shell:
 ./Mini_Shell
