@@ -8,11 +8,32 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+
+// The blueprint for a single background job entry
+struct singlebackjob {
+    pid_t id;          // The Process ID
+    char command[100]; // The name of the command
+    int status;        // 1 for Running, 0 for Done
+};
+
+// Global Array to hold up to 64 background jobs
+struct singlebackjob jobs[64];
+
+// Global Counter to track how many jobs we've added
+int job_count = 0;
+
 void sigchld_handler(int sig) { //This is an interrupt handler. It pauses the shell, cleans up the zombie, and resumes the shell perfectly
     // WNOHANG means "Clean up dead children, but DO NOT freeze if none are dead"
-    while (waitpid(-1, NULL, WNOHANG) > 0);
-}
+    pid_t dead_pid; //creating a dead_pid so it saves it as returned pid into variable and we dont loose it once the pid is dead, we can cross it.
+    while ((dead_pid=waitpid(-1, NULL, WNOHANG)) > 0) {
+        for (int z=0;z<job_count;z++) {
+            if (jobs[z].id==dead_pid) {
+                jobs[z].status=0;
+            }
+        }
+    }
 
+}
 
 int main() {
     struct sigaction putearplug;// sa is a name variable
@@ -203,6 +224,16 @@ int main() {
             }
             continue; //skip the current iteration once cd is called cause cd doesn't requires fork() or execvp. It acts on parent process and not on child.
         }
+        //Background Jobs Tracker
+        if (strcmp(args[0],"jobs")==0) {
+            for (int m=0;m<job_count;m++) { // Loop through our global ledger exactly job_count times
+                if (jobs[m].status==1) {// If the Reaper hasn't crossed it out yet
+                    printf("[%d] Running \t %s\n",jobs[m].id,jobs[m].command);
+                }
+            }
+            continue; // Skip the rest of the loop (we don't want to fork for this!)
+        }
+
         if (strcmp(args[0],"exit")==0) {
             exit(0);
         }
@@ -359,6 +390,13 @@ int main() {
                 if (j<num_commands-1) { //If not the last command, close the write end of the NEW pipe, and save the read end for the next iteration!
                     close(fd[1]);
                     prev_read_fd=fd[0];
+                }
+                if (is_background==1) {
+                    jobs[job_count].id=pipe_id;
+                    jobs[job_count].status=1;
+                    strcpy(jobs[job_count].command,commands[j][0]);
+                    job_count++;
+
                 }
             }
         }// The parent waits for ALL children to finish before showing the prompt again.
