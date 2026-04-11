@@ -1,13 +1,13 @@
-#include <ctype.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <signal.h>
-#include <unistd.h>
-#include <string.h>
-#include <sys/wait.h>
-#include <fcntl.h>
-#include <sys/stat.h>
-#include <sys/types.h>
+#include <ctype.h> //Character Types: We use `isalnum()` in our Environment Injector to verify if a character is a valid letter or number when parsing variables like $USER.
+#include <stdio.h> //Standard Input/Output: Powers our communication. Gives us `printf` (the prompt), `fgets` (reading the keyboard), and `perror`/`fprintf` (printing kernel error messages).
+#include <stdlib.h> //Standard Library: Handles core system utilities. We use it for `exit()` to kill processes, `getenv()` to read OS variables, and heap memory management.
+#include <signal.h> //Signal Handling: The library that makes the "Earplugs" and "Reaper" possible (for the reference read the comments after main function its for my better understanding lol ). Gives us `sigaction()`, `SIGINT` (Ctrl+C), and `SIGCHLD`.
+#include <unistd.h> //UNIX Standard: It provides the direct system calls to the Linux kernel: `fork()` (cloning), `execvp()` (transforming), `pipe()` & `dup2()` (wiring), and `chdir()` (change directory).
+#include <string.h> //String Manipulation: Since C doesn't have native strings, we need this for `strcmp` (checking if a word is "cd"), `strdup` (grabbing fresh heap memory), and `strcpy` (copying command names into our Jobs Ledger).
+#include <sys/wait.h> //Process Synchronization: Provides `waitpid()` and the `WNOHANG` flag so our Manager and Reaper can collect the "timesheets" of dead child processes.
+#include <fcntl.h> //File Control: Used exclusively for our Redirection parser (< >). Gives us `open()` and the flags `O_RDONLY`, `O_WRONLY`, `O_CREAT`, and `O_TRUNC`.
+#include <sys/stat.h> //File Status/Attributes: We need this specifically for the `0644` permission code. When our shell creates a brand new file using `>`, this tells Linux to set the permissions to read/write for the owner, and read-only for everyone else.
+#include <sys/types.h> //System Data Types: Provides the `pid_t` (Process ID) data type required  by `fork()`, `waitpid()`, and our Global Jobs Ledger struct.
 
 // The blueprint for a single background job entry
 struct singlebackjob {
@@ -23,6 +23,8 @@ struct singlebackjob jobs[64];
 int job_count = 0;
 
 void sigchld_handler(int sig) { //This is an interrupt handler. It pauses the shell, cleans up the zombie, and resumes the shell perfectly
+    // Tell the strict compiler that we are intentionally ignoring this kernel parameter
+    (void)sig;
     // WNOHANG means "Clean up dead children, but DO NOT freeze if none are dead"
     pid_t dead_pid; //creating a dead_pid so it saves it as returned pid into variable and we dont loose it once the pid is dead, we can cross it.
     while ((dead_pid=waitpid(-1, NULL, WNOHANG)) > 0) {
